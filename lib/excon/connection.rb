@@ -60,6 +60,7 @@ module Excon
     # @option params [Class] :instrumentor Responds to #instrument as in ActiveSupport::Notifications
     # @option params [String] :instrumentor_name Name prefix for #instrument events.  Defaults to 'excon'
     def initialize(params = {})
+      @dirty_socket = false
       @data = Excon.defaults.dup
       # merge does not deep-dup, so make sure headers is not the original
       @data[:headers] = @data[:headers].dup
@@ -262,6 +263,8 @@ module Excon
 
       datum[:connection] = self
 
+      reset if @dirty_socket
+
       datum[:stack] = datum[:middlewares].map do |middleware|
         lambda {|stack| middleware.new(stack)}
       end.reverse.inject(self) do |middlewares, middleware|
@@ -437,7 +440,10 @@ module Excon
     end
 
     def response(datum={})
-      datum[:stack].response_call(datum)
+      @dirty_socket = true
+      result = datum[:stack].response_call(datum)
+      @dirty_socket = false
+      result
     rescue => error
       case error
       when Excon::Errors::HTTPStatusError, Excon::Errors::Timeout, Excon::Errors::TooManyRedirects

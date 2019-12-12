@@ -14,6 +14,34 @@ Shindo.tests('Excon Connection') do
       connection.send(:socket) # creates/connects socket
       connection.data[:remote_ip]
     end
+
+    tests("persistent connections") do
+      connection = Excon.new('http://127.0.0.1:9292', persistent: true)
+
+      response_body = connection.request(path: '/foo', method: 'get').body
+
+      test("sanity check") do
+        response_body == 'foo'
+      end
+
+      begin
+        # simulates an error that interrupts us before we finish returning the
+        # response to this request, leaving our socket with leftover data
+        # from the previous request. There's probably a more robust way to
+        # create this condition than my timeout hack :\
+        Timeout::timeout(0.00000000001) do
+          connection.request(path: '/foo', method: 'get')
+        end
+      rescue Timeout::Error
+        nil
+      end
+
+      response_body = connection.request(path: '/bar', method: 'get').body
+
+      test("resets the connection if an interrupt is detected (to avoid reading the response from previous requests)") do
+        response_body == 'bar'
+      end
+    end
   end
 
   tests("inspect redaction") do
